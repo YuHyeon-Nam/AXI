@@ -1,72 +1,119 @@
-module axi4_lite_master (
+module axi4_lite_master #(
+    parameter DATA_WIDTH = 32,
+    parameter ADDRESS = 32
+) (
+    //Global Signals
     input logic ACLK,
     input logic ARESETn,
-    input logic start_rd, // upstream pulse signal
-    input logic [31:0] raddr,
-    output logic [31:0] ARADDR,
-    output logic ARVALID,
-    input logic ARREADY
+
+    input logic START_READ,
+    input logic START_WRITE,
+
+    input logic [DATA_WIDTH-1:0] w_data,
+    input logic [   ADDRESS-1:0] address,
+    output logic [DATA_WIDTH-1:0] r_data,
+
+    //arread channel 
+    input  logic               M_ARREADY,
+    output logic [ADDRESS-1:0] M_ARADDR,
+    output logic               M_ARVALID,
     //output logic [2:0] ARPROT
+
+    //read channel
+    input  logic [DATA_WIDTH-1:0] M_RDATA,
+    input  logic [           1:0] M_RRESP,
+    input  logic                  M_RVALID,
+    output logic                  M_RREADY,
+
+    //aw channel
+    output logic [ADDRESS-1:0] M_AWADDR,
+    output logic               M_AWVALID,
+    input  logic               M_AWREADY,
+
+    //write channel
+    output logic [DATA_WIDTH-1:0] M_WDATA,
+    output logic                  M_WSTRB,
+    output logic                  M_WVALID,
+    input  logic                  M_WREADY,
+    input  logic [           1:0] M_BRESP,
+    input  logic                  M_BVALID,
+    output logic                  M_BREADY
+
 );
 
-  reg [31:0] r_raddr;
-  reg r_rvalid;
+  logic read_start;
+  logic write_addr;
+  logic write_data;
+  logic write_start;
 
- //1번시도
+  typedef enum logic [2:0] {
+    IDLE,
+    AR_CHANNEL,
+    RDATA_CHANNEL,
+    WRITE_CHANNEL,
+    WRESP_CHANNEL
+  } state_type;
+
+  state_type state, n_state;
+
+  //ar
+  assign M_ARADDR = (state == AR_CHANNEL) ? address : 0;
+  assign M_ARVALID = (state == AR_CHANNEL) ? 1 : 0;
+  //read
+  assign M_RREADY = (state == RDATA_CHANNEL) ? 1 : 0;
+  //assign r_data = (state == RDATA_CHANNEL) ? M_RDATA : 32'h0; //to slave register
+  //awrite
+  assign M_AWVALID = (state == WRITE_CHANNEL) ? address : 0;
+  assign M_AWADDR = (state == WRITE_CHANNEL) ? 1 : 0;
+  assign write_addr = (M_AWVALID && M_AWREADY);
+  assign write_data = (M_WVALID && M_WREADY);
+
+  //write
+  assign M_WVALID = (state == WRITE_CHANNEL) ? 1 : 0;
+  assign M_WDATA = (state == WRITE_CHANNEL) ? w_data : 32'h0;
+  assign M_WSTRB = (state == WRITE_CHANNEL) ? 4'b1111 : 0;  //fixed
+
+  //wresp
+  assign M_BREADY = ((state == WRESP_CHANNEL) || (state == WRESP_CHANNEL)) ? 1 : 0;
+
   always_ff @(posedge ACLK) begin
     if (!ARESETn) begin
-      ARADDR   <= 31'b0;
-      ARVALID  <= 1'b0;
-      r_raddr  <= '0;
-      ARVALID <= '0;
-    end else if (start_rd) begin
-      r_raddr  <= raddr;
-      ARVALID <= 1'b1;
-    end else if (ARVALID && ARREADY) begin
-      ARADDR  <= r_raddr;
-      ARVALID <= 1'b0;
+      state <= IDLE;
+      read_start <= 0;
+
     end else begin
+      state <= n_state;
+      read_start <= START_READ;
     end
   end
 
-  // 2번시도 FSM
-
-  logic [1:0] state, n_state;
-  localparam IDLE = 2'b00, ONE = 2'b01, TWO = 2'b10, THREE = 2'b11;
-
-  always_ff @(posedge ACLK) begin
-    if (!ARESETn) begin
-      state  <= IDLE;
-      ARADDR   <= 31'b0;
-      ARVALID  <= 1'b0;
-      r_raddr  <= '0;
-      r_rvalid <= '0;
-    end else begin
-        state <= n_state;
-    end
-  end
-
-    // master/processor read에 대해 1cycle이 더 걸림 ONE에서?
   always_comb begin
-    ARADDR = 1'b0;
-    ARVALID = 1'b0;
-    n_state = state;
     case (state)
-        IDLE: begin
-            if(start_rd) begin
-                r_raddr = raddr;
-                r_rvalid = 1'b1;
-                n_state = ONE;
-            end
+      IDLE: begin
+        if (read_start) begin
+          n_state = AR_CHANNEL;
+        end else if (write_start) begin
+          n_state = WRITE_CHANNEL;
+        end else begin
+          n_state = IDLE;
         end
-        ONE : begin
-            if(ARREADY)begin
-                ARADDR = r_raddr;  
-                ARVALID = r_rvalid;
-                n_state = TWO;
-            end
-        end
+      end
+      AR_CHANNEL: begin
+        if (M_ARVALID && M_ARREADY) n_state = RDATA_CHANNEL;
+      end
+      RDATA_CHANNEL: begin
+        if (M_RVALID && M_RREADY) n_state = IDLE;
+      end
+      WRITE_CHANNEL: begin
+        if (write_addr && w_data) n_state = WRESP_CHANNEL;
+      end
+      WRESP_CHANNEL: begin
+        if (M_BVALID && M_BREADY) n_state = IDLE;
+      end
+      default: n_state = IDLE;
     endcase
   end
+
+
 
 endmodule
