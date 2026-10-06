@@ -30,9 +30,9 @@ module axi4_lite_slave #(
     output logic                  S_WREADY,
     output logic [           1:0] S_BRESP,
     output logic                  S_BVALID,
-
-    input logic S_BREADY
+    input  logic                  S_BREADY
 );
+
   localparam no_of_registers = 32;
   logic [DATA_WIDTH-1:0] register[no_of_registers-1:0];
   logic [ADDRESS-1:0] addr;
@@ -52,19 +52,24 @@ module axi4_lite_slave #(
 
   //ar
   assign S_ARREADY = (state == AR_CHANNEL) ? 1 : 0;
+
   //read
   assign S_RDATA = (state == RDATA_CHANNEL) ? register[addr] : 0;
   assign S_RRESP = (state == RDATA_CHANNEL) ? 2'b00 : 0;
 
   //write
   assign S_WREADY = (state == WRITE_CHANNEL) ? 1 : 0;
-  assign write_data = (S_WREADY && S_WVALID) ? 1 : 0;
-  assign write_addr = (S_WREADY && S_WVALID) ? 1 : 0;
+  assign write_data = S_WREADY && S_WVALID;
+  assign write_addr = S_AWREADY && S_AWVALID;
+
+  //B
+  assign S_BRESP = (state == WRESP_CHANNEL) ? 2'b00 : 0;
+  assign S_BVALID = (state == WRESP_CHANNEL) ? 1 : 0;
 
   always_ff @(posedge ACLK) begin
     if (!ARESETn) begin
       for (i = 0; i < 32; i++) begin
-        register[i] <= 32'b0;
+        register[i] <= i+1;
       end
     end else begin
       if (state == WRITE_CHANNEL) begin

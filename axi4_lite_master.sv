@@ -61,7 +61,7 @@ module axi4_lite_master #(
   assign M_ARVALID = (state == AR_CHANNEL) ? 1 : 0;
   //read
   assign M_RREADY = (state == RDATA_CHANNEL) ? 1 : 0;
-  //assign r_data = (state == RDATA_CHANNEL) ? M_RDATA : 32'h0; //to slave register
+  assign r_data = (state == RDATA_CHANNEL) ? M_RDATA : 32'h0;
   //awrite
   assign M_AWVALID = (state == WRITE_CHANNEL) ? address : 0;
   assign M_AWADDR = (state == WRITE_CHANNEL) ? 1 : 0;
@@ -74,7 +74,7 @@ module axi4_lite_master #(
   assign M_WSTRB = (state == WRITE_CHANNEL) ? 4'b1111 : 0;  //fixed
 
   //wresp
-  assign M_BREADY = ((state == WRESP_CHANNEL) || (state == WRESP_CHANNEL)) ? 1 : 0;
+  assign M_BREADY = ((state == WRITE_CHANNEL) || (state == WRESP_CHANNEL)) ? 1 : 0;
 
   always_ff @(posedge ACLK) begin
     if (!ARESETn) begin
